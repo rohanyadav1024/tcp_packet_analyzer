@@ -1,4 +1,4 @@
-module tcp_packet_analyzer
+module github.com/rohanyadav1024/tcp_packet_analyzer
 
 go 1.24.5
 
