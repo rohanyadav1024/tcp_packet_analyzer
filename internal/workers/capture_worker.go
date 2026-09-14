@@ -2,7 +2,7 @@ package workers
 
 import (
 	context "context"
-	"log"
+	// "log"
 	"sync"
 	"sync/atomic"
 
@@ -16,7 +16,7 @@ type CaptureWorker struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
-	capture        *capture.Capture                           // Capture source for capturing frames.
+	capture         *capture.Capture                           // Capture source for capturing frames.
 	dataLinkChannel *channels.Channel[artifacts.CapturedFrame] // Channel for sending captured frames to the data link worker.
 
 	nextID atomic.Uint64
@@ -29,9 +29,9 @@ func NewCaptureWorker(
 	ctx, cancel := context.WithCancel(context.Background())
 	return &CaptureWorker{
 		dataLinkChannel: captureChannel,
-		capture:        capture,
-		ctx:            ctx,
-		cancel:         cancel,
+		capture:         capture,
+		ctx:             ctx,
+		cancel:          cancel,
 	}
 }
 
@@ -53,7 +53,7 @@ func (cw *CaptureWorker) worker() {
 	// Run forever until the worker is stopped.
 	for {
 		// Capture a frame and send it to the capture channel.
-		data, _, captureLength, err := cw.capture.ReadPacketData()
+		data, ci, err := cw.capture.ReadPacketData()
 		if err != nil {
 			// Handle error appropriately.
 			continue
@@ -61,13 +61,15 @@ func (cw *CaptureWorker) worker() {
 
 		id := cw.nextID.Add(1)
 		captureFrame := artifacts.CapturedFrame{
-			ID:          id,
-			FrameData:   data,
-			FrameLength: captureLength,
+			ID:             id,
+			FrameData:      data,
+			TimeStamp:      ci.Timestamp,
+			FrameLength:    ci.CaptureLength, //Actual captured length of frame,
+			OriginalLength: ci.Length,        //Length before capturing
 		}
 
 		// Send the captured frame to the capture channel.
-		log.Printf("Captured frame of length %d bytes", captureLength)
+		// log.Printf("Captured frame of length %d bytes", captureLength)
 		ok := cw.dataLinkChannel.Push(cw.ctx, captureFrame)
 		if !ok {
 			// Channel is closed, stop the worker.

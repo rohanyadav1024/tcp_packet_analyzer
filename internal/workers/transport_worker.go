@@ -2,7 +2,7 @@ package workers
 
 import (
 	context "context"
-	"log"
+	// "log"
 	"sync"
 
 	// "log"
@@ -19,14 +19,16 @@ type TransportWorker struct {
 	wg     sync.WaitGroup
 
 	tpch        *channels.Channel[artifacts.TransportPacket] // Channel for transferring transport layer packets to the transport workers.
+	optch       *channels.Channel[artifacts.Message]         // Channel for transferring transport layer packets to the transport workers.
 	tcpParser   *tcp.TCPParser                               // TCP parser for parsing the transport layer packets.
 	packetStore *store.PacketStore
 }
 
-func NewTransportWorker(tpch *channels.Channel[artifacts.TransportPacket], tcpParser *tcp.TCPParser, pktstr *store.PacketStore) *TransportWorker {
+func NewTransportWorker(tpch *channels.Channel[artifacts.TransportPacket], optch *channels.Channel[artifacts.Message], tcpParser *tcp.TCPParser, pktstr *store.PacketStore) *TransportWorker {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &TransportWorker{
 		tpch:        tpch,
+		optch:       optch,
 		tcpParser:   tcpParser,
 		ctx:         ctx,
 		cancel:      cancel,
@@ -56,18 +58,21 @@ func (tw *TransportWorker) worker() {
 		transportPacket, ok := tw.tpch.Pop(tw.ctx)
 		if !ok {
 			// Channel is closed, stop the worker.
-			log.Println("Transport channel closed, stopping worker.")
+			// log.Println("Transport channel closed, stopping worker.")
 			return
 		}
 
 		pckd, err := tw.tcpParser.Parse(transportPacket.PacketData)
 
-		log.Printf("Parsed Payload of length %d bytes", len(pckd.Payload))
+		// log.Printf("Parsed Payload of length %d bytes", len(pckd.Payload))
 
 		// Push data to store
 		id := transportPacket.ID
 		tw.packetStore.AddTCPData(id, &pckd)
 		if err != nil {
+			continue
 		}
+
+		ok = tw.optch.Push(tw.ctx, artifacts.Message{ID: id})
 	}
 }

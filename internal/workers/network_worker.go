@@ -2,7 +2,7 @@ package workers
 
 import (
 	context "context"
-	"log"
+	// "log"
 	"sync"
 
 	artifacts "github.com/rohanyadav1024/tcp_packet_analyzer/internal/artifacts"
@@ -60,23 +60,23 @@ func (nw *NetworkWorker) worker() {
 		networkPacket, ok := nw.ntwch.Pop(nw.ctx)
 		if !ok {
 			// Channel is closed, stop the worker.
-			log.Println("Network channel closed, stopping worker.")
+			// log.Println("Network channel closed, stopping worker.")
 			return
 		}
 
 		// Parse the packet and send the parsed packet to the transport channel.
 		transportPacket, td, err := nw.ipv4Parser.Parse(networkPacket.PacketData)
 		if err != nil {
-			log.Printf("Error parsing network packet: %v", err)
+			// log.Printf("Error parsing network packet: %v", err)
 			continue
 		}
 		if td.Protocol != uint8(6) {
-			log.Printf("Not a TCP packet, skipping processing. Protocol: %d", td.Protocol)
+			// log.Printf("Not a TCP packet, skipping processing. Protocol: %d", td.Protocol)
 			// Not a TCP packet, skip processing.
 			continue
 		}
 
-		log.Printf("Parsed transport packet of length %d bytes", len(transportPacket))
+		// log.Printf("Parsed transport packet of length %d bytes", len(transportPacket))
 
 		// push to store
 		id := networkPacket.ID
@@ -88,7 +88,7 @@ func (nw *NetworkWorker) worker() {
 			// PacketNumber: networkPacket.PacketNumber,
 		})
 		if !ok {
-			log.Println("Transport channel closed, stopping worker.")
+			// log.Println("Transport channel closed, stopping worker.")
 			return
 		}
 	}

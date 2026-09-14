@@ -11,22 +11,27 @@ type Warning struct {
 }
 
 type CapturedFrame struct {
-	ID          uint64
-	TimeStamp   time.Time
-	FrameLength int
-	FrameData   []byte
+	ID             uint64
+	TimeStamp      time.Time
+	FrameLength    int
+	OriginalLength int
+	FrameData      []byte
 }
 
 type NetworkPacket struct {
-	ID          uint64
+	ID           uint64
 	PacketNumber int
 	PacketLength int
 	PacketData   []byte
 }
 
 type TransportPacket struct {
-	ID          uint64
+	ID           uint64
 	PacketNumber int
 	PacketLength int
 	PacketData   []byte
+}
+
+type Message struct {
+	ID uint64
 }

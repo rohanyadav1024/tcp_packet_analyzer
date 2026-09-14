@@ -2,7 +2,7 @@ package workers
 
 import (
 	context "context"
-	"log"
+	// "log"
 	"sync"
 
 	artifacts "github.com/rohanyadav1024/tcp_packet_analyzer/internal/artifacts"
@@ -51,7 +51,7 @@ func (dlw *DataLinkWorker) worker() {
 		captureFrame, ok := dlw.dlch.Pop(dlw.ctx)
 		if !ok {
 			// Channel is closed, stop the worker.
-			log.Println("Network channel closed, stopping worker.")
+			// log.Println("Network channel closed, stopping worker.")
 			return
 		}
 
@@ -63,28 +63,32 @@ func (dlw *DataLinkWorker) worker() {
 		}
 
 		if ed.EtherType != uint16(0x0800) {
-			log.Printf("Non-IPv4 packet received, EtherType: %x. Skipping.", ed.EtherType)
+			// log.Printf("Non-IPv4 packet received, EtherType: %x. Skipping.", ed.EtherType)
 			continue // Skip non-IPv4 packets for now. ToDo: Add support for other protocols.
 		}
 
 		id := captureFrame.ID
 		_ = dlw.packetStore.GetOrCreate(id)
+
+		dlw.packetStore.AddCaptureMetadata(
+			id,
+			captureFrame.TimeStamp,
+			captureFrame.FrameLength,
+			captureFrame.OriginalLength,
+		)
+		// Push ethernet parsed data to store
+		dlw.packetStore.AddEthernetData(id, &ed)
+
+		// log.Printf("Parsed network packet of length %d bytes", len(packet))
 		// Create a NetworkPacket structure to send to the network channel.
 		networkPacket := artifacts.NetworkPacket{
 			PacketData: packet,
 			ID:         id,
-			// PacketLength: ,
-			// PacketNumber: ,
 		}
-
-		// Push ethernet parsed data to store
-		dlw.packetStore.AddEthernetData(id, &ed)
-
-		log.Printf("Parsed network packet of length %d bytes", len(packet))
 		ok = dlw.ntwch.Push(dlw.ctx, networkPacket)
 		if !ok {
 			// Channel is closed, stop the worker.
-			log.Println("Network channel closed, stopping worker.")
+			// log.Println("Network channel closed, stopping worker.")
 			return
 		}
 		// }

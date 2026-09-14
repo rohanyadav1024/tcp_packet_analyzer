@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 
 	eth "github.com/rohanyadav1024/tcp_packet_analyzer/internal/protocol/ethernet"
 	ipv4 "github.com/rohanyadav1024/tcp_packet_analyzer/internal/protocol/ipv4"
@@ -74,6 +75,22 @@ func (ps *PacketStore) AddTCPData(id uint64, data *tcp.TCPData) {
 	defer ps.mu.Unlock()
 	packet := ps.getOrCreateLocked(id)
 	packet.TCP = data
+}
+
+func (ps *PacketStore) AddCaptureMetadata(
+	id uint64,
+	timestamp time.Time,
+	capturedLength int,
+	originalLength int,
+) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	packet := ps.getOrCreateLocked(id)
+
+	packet.Timestamp = timestamp
+	packet.CapturedLength = capturedLength
+	packet.OriginalLength = originalLength
 }
 
 // Temparory method
