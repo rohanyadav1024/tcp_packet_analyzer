@@ -8,6 +8,7 @@ import (
 	artifacts "github.com/rohanyadav1024/tcp_packet_analyzer/internal/artifacts"
 	channels "github.com/rohanyadav1024/tcp_packet_analyzer/internal/channels"
 	ipv4 "github.com/rohanyadav1024/tcp_packet_analyzer/internal/protocol/ipv4"
+	store "github.com/rohanyadav1024/tcp_packet_analyzer/internal/store"
 )
 
 type NetworkWorker struct {
@@ -18,16 +19,21 @@ type NetworkWorker struct {
 	ntwch *channels.Channel[artifacts.NetworkPacket]   // Channel for pulling network layer packets.
 	tpch  *channels.Channel[artifacts.TransportPacket] // Channel for transferring transport layer packets to the transport workers.
 
-	ipv4Parser *ipv4.IPV4Parser // IPv4 parser for parsing the network layer packets.
+	ipv4Parser  *ipv4.IPV4Parser // IPv4 parser for parsing the network layer packets.
+	packetStore *store.PacketStore
 }
 
-func NewNetworkWorker(ntwch *channels.Channel[artifacts.NetworkPacket], tpch *channels.Channel[artifacts.TransportPacket]) *NetworkWorker {
+func NewNetworkWorker(
+	ntwch *channels.Channel[artifacts.NetworkPacket],
+	tpch *channels.Channel[artifacts.TransportPacket],
+	pktstr *store.PacketStore) *NetworkWorker {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &NetworkWorker{
-		ntwch:  ntwch,
-		tpch:   tpch,
-		ctx:    ctx,
-		cancel: cancel,
+		ntwch:       ntwch,
+		tpch:        tpch,
+		ctx:         ctx,
+		cancel:      cancel,
+		packetStore: pktstr,
 	}
 }
 
@@ -71,7 +77,12 @@ func (nw *NetworkWorker) worker() {
 		}
 
 		log.Printf("Parsed transport packet of length %d bytes", len(transportPacket))
+
+		// push to store
+		id := networkPacket.ID
+		nw.packetStore.AddIPV4Data(id, &td)
 		ok = nw.tpch.Push(nw.ctx, artifacts.TransportPacket{
+			ID:         id,
 			PacketData: transportPacket,
 			// PacketLength: len(transportPacket),
 			// PacketNumber: networkPacket.PacketNumber,

@@ -8,6 +8,7 @@ import (
 	artifacts "github.com/rohanyadav1024/tcp_packet_analyzer/internal/artifacts"
 	channels "github.com/rohanyadav1024/tcp_packet_analyzer/internal/channels"
 	eth "github.com/rohanyadav1024/tcp_packet_analyzer/internal/protocol/ethernet"
+	store "github.com/rohanyadav1024/tcp_packet_analyzer/internal/store"
 )
 
 type DataLinkWorker struct {
@@ -19,15 +20,17 @@ type DataLinkWorker struct {
 	ntwch *channels.Channel[artifacts.NetworkPacket] // Channel for transferring network layer packets to the network workers.
 
 	ethernetParser *eth.EthernetParser // Ethernet parser for parsing the captured frames.
+	packetStore    *store.PacketStore
 }
 
-func NewDataLinkWorker(dlch *channels.Channel[artifacts.CapturedFrame], ntwch *channels.Channel[artifacts.NetworkPacket]) *DataLinkWorker {
+func NewDataLinkWorker(dlch *channels.Channel[artifacts.CapturedFrame], ntwch *channels.Channel[artifacts.NetworkPacket], pktstr *store.PacketStore) *DataLinkWorker {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &DataLinkWorker{
-		dlch:   dlch,
-		ntwch:  ntwch,
-		ctx:    ctx,
-		cancel: cancel,
+		dlch:        dlch,
+		ntwch:       ntwch,
+		ctx:         ctx,
+		cancel:      cancel,
+		packetStore: pktstr,
 	}
 }
 
@@ -64,12 +67,18 @@ func (dlw *DataLinkWorker) worker() {
 			continue // Skip non-IPv4 packets for now. ToDo: Add support for other protocols.
 		}
 
+		id := captureFrame.ID
+		_ = dlw.packetStore.GetOrCreate(id)
 		// Create a NetworkPacket structure to send to the network channel.
 		networkPacket := artifacts.NetworkPacket{
 			PacketData: packet,
+			ID:         id,
 			// PacketLength: ,
 			// PacketNumber: ,
 		}
+
+		// Push ethernet parsed data to store
+		dlw.packetStore.AddEthernetData(id, &ed)
 
 		log.Printf("Parsed network packet of length %d bytes", len(packet))
 		ok = dlw.ntwch.Push(dlw.ctx, networkPacket)

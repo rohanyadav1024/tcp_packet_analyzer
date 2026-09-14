@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"log"
 	"sync"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	eth "github.com/rohanyadav1024/tcp_packet_analyzer/internal/protocol/ethernet"
 	ipv4 "github.com/rohanyadav1024/tcp_packet_analyzer/internal/protocol/ipv4"
 	tcp "github.com/rohanyadav1024/tcp_packet_analyzer/internal/protocol/tcp"
+	store "github.com/rohanyadav1024/tcp_packet_analyzer/internal/store"
 	"github.com/rohanyadav1024/tcp_packet_analyzer/internal/workers"
 )
 
@@ -30,32 +32,33 @@ import (
 // 		Network workers → Transport workers
 // 		Accepts: TransportPacket
 
-
 type Engine struct {
-	ctx context.Context
+	ctx    context.Context
 	cancel context.CancelFunc
-	wg sync.WaitGroup
+	wg     sync.WaitGroup
 
 	channels struct {
-		DataLinkChannel  *channels.Channel[artifacts.CapturedFrame] // Channel for transferring capture frames to Data link workers.
-		NetworkChannel   *channels.Channel[artifacts.NetworkPacket] // Channel for transferring network layer packets between the Data link workers and network workers.
+		DataLinkChannel  *channels.Channel[artifacts.CapturedFrame]   // Channel for transferring capture frames to Data link workers.
+		NetworkChannel   *channels.Channel[artifacts.NetworkPacket]   // Channel for transferring network layer packets between the Data link workers and network workers.
 		TransportChannel *channels.Channel[artifacts.TransportPacket] // Channel for transferring transport layer packets between the network workers and transport workers.
 	}
 
 	parsers struct {
 		EthernetParser *eth.EthernetParser // Ethernet parser for parsing the captured frames.
-		IPv4Parser     *ipv4.IPV4Parser     // IPv4 parser for parsing the network layer packets.
+		IPv4Parser     *ipv4.IPV4Parser    // IPv4 parser for parsing the network layer packets.
 		TCPParser      *tcp.TCPParser      // TCP parser for parsing the transport layer packets.
 	}
 
 	workers struct {
-		CaptureWorker  *workers.CaptureWorker  // Worker for capturing frames from the network interface.
+		CaptureWorker   *workers.CaptureWorker   // Worker for capturing frames from the network interface.
 		DataLinkWorker  *workers.DataLinkWorker  // Worker for parsing captured frames and sending network layer packets to the network workers.
 		NetworkWorker   *workers.NetworkWorker   // Worker for parsing network layer packets and sending transport layer packets to the transport workers.
 		TransportWorker *workers.TransportWorker // Worker for parsing transport layer packets and sending them to the application layer.
 	}
 
-	capture  *capture.Capture // Capture source for capturing frames from the network interface.
+	capture *capture.Capture // Capture source for capturing frames from the network interface.
+
+	packetStore *store.PacketStore
 }
 
 func NewEngine() *Engine {
@@ -70,6 +73,8 @@ func NewEngine() *Engine {
 	ipv4Parser := &ipv4.IPV4Parser{}
 	tcpParser := &tcp.TCPParser{}
 
+	packetStore := store.NewPacketStore()
+
 	capture, err := capture.NewCapture("en0", 65535, true, time.Duration(30))
 	// capture, err := capture.NewCaptureFromFile("sample_packets.pcap")
 	if err != nil {
@@ -78,9 +83,9 @@ func NewEngine() *Engine {
 
 	// Initialize the workers.
 	captureWorker := workers.NewCaptureWorker(dataLinkChannel, capture)
-	dataLinkWorker := workers.NewDataLinkWorker(dataLinkChannel, networkChannel)
-	networkWorker := workers.NewNetworkWorker(networkChannel, transportChannel)
-	transportWorker := workers.NewTransportWorker(transportChannel, tcpParser)
+	dataLinkWorker := workers.NewDataLinkWorker(dataLinkChannel, networkChannel, packetStore)
+	networkWorker := workers.NewNetworkWorker(networkChannel, transportChannel, packetStore)
+	transportWorker := workers.NewTransportWorker(transportChannel, tcpParser, packetStore)
 
 	return &Engine{
 		ctx:    ctx,
@@ -105,17 +110,18 @@ func NewEngine() *Engine {
 			TCPParser:      tcpParser,
 		},
 		workers: struct {
-			CaptureWorker  *workers.CaptureWorker
+			CaptureWorker   *workers.CaptureWorker
 			DataLinkWorker  *workers.DataLinkWorker
 			NetworkWorker   *workers.NetworkWorker
 			TransportWorker *workers.TransportWorker
 		}{
-			CaptureWorker:  captureWorker,
+			CaptureWorker:   captureWorker,
 			DataLinkWorker:  dataLinkWorker,
 			NetworkWorker:   networkWorker,
 			TransportWorker: transportWorker,
 		},
-		capture: capture,
+		capture:     capture,
+		packetStore: packetStore,
 	}
 }
 
@@ -138,6 +144,10 @@ func (e *Engine) Stop() {
 	e.channels.DataLinkChannel.Close()
 	e.channels.NetworkChannel.Close()
 	e.channels.TransportChannel.Close()
+
+	if err := e.packetStore.DumpToFile("packet_store.txt"); err != nil {
+		log.Printf("Failed to dump packet store: %v", err)
+	}
 
 	e.cancel()
 }
