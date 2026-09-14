@@ -2,7 +2,7 @@ package workers
 
 import (
 	context "context"
-	"log"
+	// "log"
 	"sync"
 
 	// "log"
@@ -10,6 +10,7 @@ import (
 	artifacts "github.com/rohanyadav1024/tcp_packet_analyzer/internal/artifacts"
 	channels "github.com/rohanyadav1024/tcp_packet_analyzer/internal/channels"
 	tcp "github.com/rohanyadav1024/tcp_packet_analyzer/internal/protocol/tcp"
+	store "github.com/rohanyadav1024/tcp_packet_analyzer/internal/store"
 )
 
 type TransportWorker struct {
@@ -17,17 +18,21 @@ type TransportWorker struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
-	tpch      *channels.Channel[artifacts.TransportPacket] // Channel for transferring transport layer packets to the transport workers.
-	tcpParser *tcp.TCPParser                               // TCP parser for parsing the transport layer packets.
+	tpch        *channels.Channel[artifacts.TransportPacket] // Channel for transferring transport layer packets to the transport workers.
+	optch       *channels.Channel[artifacts.Message]         // Channel for transferring transport layer packets to the transport workers.
+	tcpParser   *tcp.TCPParser                               // TCP parser for parsing the transport layer packets.
+	packetStore *store.PacketStore
 }
 
-func NewTransportWorker(tpch *channels.Channel[artifacts.TransportPacket], tcpParser *tcp.TCPParser) *TransportWorker {
+func NewTransportWorker(tpch *channels.Channel[artifacts.TransportPacket], optch *channels.Channel[artifacts.Message], tcpParser *tcp.TCPParser, pktstr *store.PacketStore) *TransportWorker {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &TransportWorker{
-		tpch:      tpch,
-		tcpParser: tcpParser,
-		ctx:       ctx,
-		cancel:    cancel,
+		tpch:        tpch,
+		optch:       optch,
+		tcpParser:   tcpParser,
+		ctx:         ctx,
+		cancel:      cancel,
+		packetStore: pktstr,
 	}
 }
 
@@ -53,14 +58,21 @@ func (tw *TransportWorker) worker() {
 		transportPacket, ok := tw.tpch.Pop(tw.ctx)
 		if !ok {
 			// Channel is closed, stop the worker.
-			log.Println("Transport channel closed, stopping worker.")
+			// log.Println("Transport channel closed, stopping worker.")
 			return
 		}
 
-		// _, err := tw.tcpParser.Parse(transportPacket.PacketData)
 		pckd, err := tw.tcpParser.Parse(transportPacket.PacketData)
-		log.Printf("Parsed Payload of length %d bytes", len(pckd.Payload))
+
+		// log.Printf("Parsed Payload of length %d bytes", len(pckd.Payload))
+
+		// Push data to store
+		id := transportPacket.ID
+		tw.packetStore.AddTCPData(id, &pckd)
 		if err != nil {
+			continue
 		}
+
+		ok = tw.optch.Push(tw.ctx, artifacts.Message{ID: id})
 	}
 }

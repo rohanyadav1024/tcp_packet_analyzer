@@ -2,12 +2,13 @@ package workers
 
 import (
 	context "context"
-	"log"
+	// "log"
 	"sync"
 
 	artifacts "github.com/rohanyadav1024/tcp_packet_analyzer/internal/artifacts"
 	channels "github.com/rohanyadav1024/tcp_packet_analyzer/internal/channels"
 	ipv4 "github.com/rohanyadav1024/tcp_packet_analyzer/internal/protocol/ipv4"
+	store "github.com/rohanyadav1024/tcp_packet_analyzer/internal/store"
 )
 
 type NetworkWorker struct {
@@ -18,16 +19,21 @@ type NetworkWorker struct {
 	ntwch *channels.Channel[artifacts.NetworkPacket]   // Channel for pulling network layer packets.
 	tpch  *channels.Channel[artifacts.TransportPacket] // Channel for transferring transport layer packets to the transport workers.
 
-	ipv4Parser *ipv4.IPV4Parser // IPv4 parser for parsing the network layer packets.
+	ipv4Parser  *ipv4.IPV4Parser // IPv4 parser for parsing the network layer packets.
+	packetStore *store.PacketStore
 }
 
-func NewNetworkWorker(ntwch *channels.Channel[artifacts.NetworkPacket], tpch *channels.Channel[artifacts.TransportPacket]) *NetworkWorker {
+func NewNetworkWorker(
+	ntwch *channels.Channel[artifacts.NetworkPacket],
+	tpch *channels.Channel[artifacts.TransportPacket],
+	pktstr *store.PacketStore) *NetworkWorker {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &NetworkWorker{
-		ntwch:  ntwch,
-		tpch:   tpch,
-		ctx:    ctx,
-		cancel: cancel,
+		ntwch:       ntwch,
+		tpch:        tpch,
+		ctx:         ctx,
+		cancel:      cancel,
+		packetStore: pktstr,
 	}
 }
 
@@ -54,30 +60,35 @@ func (nw *NetworkWorker) worker() {
 		networkPacket, ok := nw.ntwch.Pop(nw.ctx)
 		if !ok {
 			// Channel is closed, stop the worker.
-			log.Println("Network channel closed, stopping worker.")
+			// log.Println("Network channel closed, stopping worker.")
 			return
 		}
 
 		// Parse the packet and send the parsed packet to the transport channel.
 		transportPacket, td, err := nw.ipv4Parser.Parse(networkPacket.PacketData)
 		if err != nil {
-			log.Printf("Error parsing network packet: %v", err)
+			// log.Printf("Error parsing network packet: %v", err)
 			continue
 		}
 		if td.Protocol != uint8(6) {
-			log.Printf("Not a TCP packet, skipping processing. Protocol: %d", td.Protocol)
+			// log.Printf("Not a TCP packet, skipping processing. Protocol: %d", td.Protocol)
 			// Not a TCP packet, skip processing.
 			continue
 		}
 
-		log.Printf("Parsed transport packet of length %d bytes", len(transportPacket))
+		// log.Printf("Parsed transport packet of length %d bytes", len(transportPacket))
+
+		// push to store
+		id := networkPacket.ID
+		nw.packetStore.AddIPV4Data(id, &td)
 		ok = nw.tpch.Push(nw.ctx, artifacts.TransportPacket{
+			ID:         id,
 			PacketData: transportPacket,
 			// PacketLength: len(transportPacket),
 			// PacketNumber: networkPacket.PacketNumber,
 		})
 		if !ok {
-			log.Println("Transport channel closed, stopping worker.")
+			// log.Println("Transport channel closed, stopping worker.")
 			return
 		}
 	}

@@ -3,6 +3,7 @@ package capture
 import (
 	"time"
 
+	"github.com/google/gopacket"
 	pcap "github.com/google/gopacket/pcap"
 )
 
@@ -32,12 +33,11 @@ func (c *Capture) Close() {
 	defer c.handle.Close()
 }
 
-func (c *Capture) ReadPacketData() ([]byte, time.Time, int, error) {
+func (c *Capture) ReadPacketData() ([]byte, gopacket.CaptureInfo, error) {
 	data, ci, err := c.handle.ReadPacketData()
 	if err != nil {
-		return nil, time.Time{}, 0, err
+		return nil, gopacket.CaptureInfo{}, err
 	}
 
-	// capturedLength := ci.CaptureLength
-	return data, ci.Timestamp, ci.CaptureLength, nil
+	return data, ci, nil
 }

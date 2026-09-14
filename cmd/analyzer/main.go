@@ -17,10 +17,10 @@ func main() {
 	// flag.Parse()
 
 	// Create a new engine.
-	captureEngine := engine.NewEngine()
+	engine := engine.NewEngine()
 
 	// Start the engine.
-	captureEngine.Start()
+	engine.Start()
 
 	// Wait for a termination signal (e.g., Ctrl+C).
 	sigChan := make(chan os.Signal, 1)
@@ -28,7 +28,6 @@ func main() {
 	<-sigChan
 
 	fmt.Println("\nTermination signal received. Stopping the engine...")
-
 	// Stop the engine.
-	captureEngine.Stop()
+	engine.Stop()
 }
