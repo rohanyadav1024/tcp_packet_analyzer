@@ -1,7 +1,9 @@
 package engine
 
 import (
-	// "time"
+	"context"
+	"sync"
+	"time"
 
 	artifacts "github.com/rohanyadav1024/tcp_packet_analyzer/internal/artifacts"
 	capture "github.com/rohanyadav1024/tcp_packet_analyzer/internal/capture"
@@ -30,6 +32,10 @@ import (
 
 
 type Engine struct {
+	ctx context.Context
+	cancel context.CancelFunc
+	wg sync.WaitGroup
+
 	channels struct {
 		DataLinkChannel  *channels.Channel[artifacts.CapturedFrame] // Channel for transferring capture frames to Data link workers.
 		NetworkChannel   *channels.Channel[artifacts.NetworkPacket] // Channel for transferring network layer packets between the Data link workers and network workers.
@@ -53,6 +59,7 @@ type Engine struct {
 }
 
 func NewEngine() *Engine {
+	ctx, cancel := context.WithCancel(context.Background())
 	// Initialize the channels.
 	dataLinkChannel := channels.NewChannel[artifacts.CapturedFrame](100)
 	networkChannel := channels.NewChannel[artifacts.NetworkPacket](100)
@@ -63,8 +70,8 @@ func NewEngine() *Engine {
 	ipv4Parser := &ipv4.IPV4Parser{}
 	tcpParser := &tcp.TCPParser{}
 
-	// capture, err := capture.NewCapture("en0", 65535, true, time.Duration(30))
-	capture, err := capture.NewCaptureFromFile("sample_packets.pcap")
+	capture, err := capture.NewCapture("en0", 65535, true, time.Duration(30))
+	// capture, err := capture.NewCaptureFromFile("sample_packets.pcap")
 	if err != nil {
 		panic(err)
 	}
@@ -76,6 +83,9 @@ func NewEngine() *Engine {
 	transportWorker := workers.NewTransportWorker(transportChannel, tcpParser)
 
 	return &Engine{
+		ctx:    ctx,
+		cancel: cancel,
+
 		channels: struct {
 			DataLinkChannel  *channels.Channel[artifacts.CapturedFrame]
 			NetworkChannel   *channels.Channel[artifacts.NetworkPacket]
@@ -128,4 +138,6 @@ func (e *Engine) Stop() {
 	e.channels.DataLinkChannel.Close()
 	e.channels.NetworkChannel.Close()
 	e.channels.TransportChannel.Close()
+
+	e.cancel()
 }

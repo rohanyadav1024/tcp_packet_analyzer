@@ -47,43 +47,38 @@ func (nw *NetworkWorker) Stop() {
 }
 
 func (nw *NetworkWorker) worker() {
+	defer nw.wg.Done() // Mark the worker as done when it exits.
 	// Run forever until the worker is stopped.
 	for {
-		select {
-		case <-nw.ctx.Done():
-			return // Context is done, stop the worker.
-		default:
-			// Read from the network channel.
-			networkPacket := nw.ntwch.Pop()
-			// if !ok {
-			// 	// Channel is closed, stop the worker
-			// 	log.Println("Network channel closed, stopping worker.")
-			// 	break
-			// }
+		// Read from the network channel.
+		networkPacket, ok := nw.ntwch.Pop(nw.ctx)
+		if !ok {
+			// Channel is closed, stop the worker.
+			log.Println("Network channel closed, stopping worker.")
+			return
+		}
 
-			// Parse the packet and send the parsed packet to the transport channel.
-			// _, _, err := nw.ipv4Parser.Parse(networkPacket.PacketData)
-			transportPacket, td, err := nw.ipv4Parser.Parse(networkPacket.PacketData)
-			if err != nil {
-				log.Printf("Error parsing network packet: %v", err)
-				continue
-			}
-			if td.Protocol != uint8(6) {
-				log.Printf("Not a TCP packet, skipping processing. Protocol: %d", td.Protocol)
-				// Not a TCP packet, skip processing.
-				continue
-			}
+		// Parse the packet and send the parsed packet to the transport channel.
+		transportPacket, td, err := nw.ipv4Parser.Parse(networkPacket.PacketData)
+		if err != nil {
+			log.Printf("Error parsing network packet: %v", err)
+			continue
+		}
+		if td.Protocol != uint8(6) {
+			log.Printf("Not a TCP packet, skipping processing. Protocol: %d", td.Protocol)
+			// Not a TCP packet, skip processing.
+			continue
+		}
 
-			log.Printf("Parsed transport packet of length %d bytes", len(transportPacket))
-			ok := nw.tpch.PushNonBlocking(artifacts.TransportPacket{
-				PacketData: transportPacket,
-				// PacketLength: len(transportPacket),
-				// PacketNumber: networkPacket.PacketNumber,
-			})
-			if !ok {
-				log.Println("Transport channel closed, stopping worker.")
-				break
-			}
+		log.Printf("Parsed transport packet of length %d bytes", len(transportPacket))
+		ok = nw.tpch.Push(nw.ctx, artifacts.TransportPacket{
+			PacketData: transportPacket,
+			// PacketLength: len(transportPacket),
+			// PacketNumber: networkPacket.PacketNumber,
+		})
+		if !ok {
+			log.Println("Transport channel closed, stopping worker.")
+			return
 		}
 	}
 }

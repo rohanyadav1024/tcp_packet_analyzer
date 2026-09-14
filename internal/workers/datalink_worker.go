@@ -11,9 +11,9 @@ import (
 )
 
 type DataLinkWorker struct {
-	ctx context.Context
+	ctx    context.Context
 	cancel context.CancelFunc
-	wg sync.WaitGroup
+	wg     sync.WaitGroup
 
 	dlch  *channels.Channel[artifacts.CapturedFrame] // Channel for pulling capture frames.
 	ntwch *channels.Channel[artifacts.NetworkPacket] // Channel for transferring network layer packets to the network workers.
@@ -24,10 +24,10 @@ type DataLinkWorker struct {
 func NewDataLinkWorker(dlch *channels.Channel[artifacts.CapturedFrame], ntwch *channels.Channel[artifacts.NetworkPacket]) *DataLinkWorker {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &DataLinkWorker{
-		dlch:  dlch,
-		ntwch: ntwch,
-		ctx:   ctx,
-		cancel:         cancel,
+		dlch:   dlch,
+		ntwch:  ntwch,
+		ctx:    ctx,
+		cancel: cancel,
 	}
 }
 
@@ -41,49 +41,44 @@ func (dlw *DataLinkWorker) Run() {
 }
 
 func (dlw *DataLinkWorker) worker() {
+	defer dlw.wg.Done() // Mark the worker as done when it exits.
 	// Run forever until the worker is stopped.
 	for {
-		select {
-		case <-dlw.ctx.Done():
-			return // Context is done, stop the worker.
-		default:
-			// Read from the capture channel.
-			captureFrame := dlw.dlch.Pop()
-			// if !ok {
-			// 	// Channel is closed, stop the worker.
-			// 	// ToDo: Add a log message
-			// 	// ToDo: Add recovery mechanism
-			// 	break
-			// }
-
-			// Parse the frame and send the parsed packet to the network channel.
-			packet, ed, err := dlw.ethernetParser.Parse(captureFrame.FrameData)
-			if err != nil {
-				// ToDo: Add error handling
-				continue
-			}
-
-			if ed.EtherType != uint16(0x0800) {
-				log.Printf("Non-IPv4 packet received, EtherType: %x. Skipping.", ed.EtherType)
-				continue // Skip non-IPv4 packets for now. ToDo: Add support for other protocols.
-			}
-
-			// Create a NetworkPacket structure to send to the network channel.
-			networkPacket := artifacts.NetworkPacket{
-				PacketData: packet,
-				// PacketLength: ,
-				// PacketNumber: ,
-			}
-
-			log.Printf("Parsed network packet of length %d bytes", len(packet))
-			ok := dlw.ntwch.PushNonBlocking(networkPacket)
-			if !ok {
-				// Channel is closed, stop the worker.
-				log.Println("Network channel closed, stopping worker.")
-				// ToDo: Add a log message
-				// ToDo: Add recovery mechanism
-			}
+		// Read from the capture channel.
+		captureFrame, ok := dlw.dlch.Pop(dlw.ctx)
+		if !ok {
+			// Channel is closed, stop the worker.
+			log.Println("Network channel closed, stopping worker.")
+			return
 		}
+
+		// Parse the frame and send the parsed packet to the network channel.
+		packet, ed, err := dlw.ethernetParser.Parse(captureFrame.FrameData)
+		if err != nil {
+			// ToDo: Add error handling
+			continue
+		}
+
+		if ed.EtherType != uint16(0x0800) {
+			log.Printf("Non-IPv4 packet received, EtherType: %x. Skipping.", ed.EtherType)
+			continue // Skip non-IPv4 packets for now. ToDo: Add support for other protocols.
+		}
+
+		// Create a NetworkPacket structure to send to the network channel.
+		networkPacket := artifacts.NetworkPacket{
+			PacketData: packet,
+			// PacketLength: ,
+			// PacketNumber: ,
+		}
+
+		log.Printf("Parsed network packet of length %d bytes", len(packet))
+		ok = dlw.ntwch.Push(dlw.ctx, networkPacket)
+		if !ok {
+			// Channel is closed, stop the worker.
+			log.Println("Network channel closed, stopping worker.")
+			return
+		}
+		// }
 	}
 }
 

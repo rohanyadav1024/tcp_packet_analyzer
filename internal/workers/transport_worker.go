@@ -3,6 +3,8 @@ package workers
 import (
 	context "context"
 	"log"
+	"sync"
+
 	// "log"
 
 	artifacts "github.com/rohanyadav1024/tcp_packet_analyzer/internal/artifacts"
@@ -11,17 +13,21 @@ import (
 )
 
 type TransportWorker struct {
-	ctx context.Context
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
 
-	tpch *channels.Channel[artifacts.TransportPacket] // Channel for transferring transport layer packets to the transport workers.
-	tcpParser *tcp.TCPParser // TCP parser for parsing the transport layer packets.
+	tpch      *channels.Channel[artifacts.TransportPacket] // Channel for transferring transport layer packets to the transport workers.
+	tcpParser *tcp.TCPParser                               // TCP parser for parsing the transport layer packets.
 }
 
 func NewTransportWorker(tpch *channels.Channel[artifacts.TransportPacket], tcpParser *tcp.TCPParser) *TransportWorker {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &TransportWorker{
 		tpch:      tpch,
 		tcpParser: tcpParser,
-		ctx:       context.Background(),
+		ctx:       ctx,
+		cancel:    cancel,
 	}
 }
 
@@ -30,35 +36,31 @@ func NewTransportWorker(tpch *channels.Channel[artifacts.TransportPacket], tcpPa
 // and sends the parsed packets to the transport channel.
 func (tw *TransportWorker) Run() {
 	// Start the worker in a separate goroutine.
+	tw.wg.Add(1)
 	go tw.worker()
 }
 
 func (tw *TransportWorker) Stop() {
 	// Cancel the context to stop the worker.
-	tw.ctx.Done()
+	tw.cancel()
+	tw.wg.Wait() // Wait for the worker to finish.
 }
 
 func (tw *TransportWorker) worker() {
+	defer tw.wg.Done() // Mark the worker as done when it exits.
 	// Run forever until the worker is stopped.
 	for {
-		select {
-		case <-tw.ctx.Done():
-			return // Context is done, stop the worker.
-		default:
-			// Read from the transport channel.
-			transportPacket := tw.tpch.Pop()
-			// if !ok {
-			// 	log.Println("Network channel closed, stopping worker.")
-			// 	break // Channel is closed, stop the worker
-			// 	// Channel is closed, stop the worker
-			// }
+		transportPacket, ok := tw.tpch.Pop(tw.ctx)
+		if !ok {
+			// Channel is closed, stop the worker.
+			log.Println("Transport channel closed, stopping worker.")
+			return
+		}
 
-
-			// _, err := tw.tcpParser.Parse(transportPacket.PacketData)
-			pckd, err := tw.tcpParser.Parse(transportPacket.PacketData)
-			log.Printf("Parsed Payload of length %d bytes", len(pckd.Payload))
-			if err != nil {
-			}
+		// _, err := tw.tcpParser.Parse(transportPacket.PacketData)
+		pckd, err := tw.tcpParser.Parse(transportPacket.PacketData)
+		log.Printf("Parsed Payload of length %d bytes", len(pckd.Payload))
+		if err != nil {
 		}
 	}
 }

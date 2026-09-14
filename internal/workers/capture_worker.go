@@ -35,41 +35,38 @@ func NewCaptureWorker(
 func (cw *CaptureWorker) Run() {
 	// Start the worker in a separate goroutine.
 	cw.wg.Add(1)
-	go cw.worker(cw.ctx)
+	go cw.worker()
 }
 
 func (cw *CaptureWorker) Stop() {
 	// Cancel the context to stop the worker.
 	cw.cancel()
+	// cw.capture.Close() // Close the capture source to stop capturing frames.
 	cw.wg.Wait() // Wait for the worker to finish.
 }
 
-func (cw *CaptureWorker) worker(ctx context.Context) {
+func (cw *CaptureWorker) worker() {
+	defer cw.wg.Done() // Mark the worker as done when it exits.
 	// Run forever until the worker is stopped.
 	for {
-		select {
-		case <-ctx.Done():
-			// Context is done, stop the worker.
-			return
-		default:
-			// Capture a frame and send it to the capture channel.
-			data, _, captureLength, err := cw.capture.ReadPacketData()
-			if err != nil {
-				// Handle error appropriately.
-				continue
-			}
-			captureFrame := artifacts.CapturedFrame{
-				FrameData:   data,
-				FrameLength: captureLength,
-			}
-
-			// Send the captured frame to the capture channel.
-			log.Printf("Captured frame of length %d bytes", captureLength)
-			ok := cw.captureChannel.PushNonBlocking(captureFrame)
-			if !ok {
-				// Channel is closed, stop the worker.
-				return
-			}
+		// Capture a frame and send it to the capture channel.
+		data, _, captureLength, err := cw.capture.ReadPacketData()
+		if err != nil {
+			// Handle error appropriately.
+			continue
 		}
+		captureFrame := artifacts.CapturedFrame{
+			FrameData:   data,
+			FrameLength: captureLength,
+		}
+
+		// Send the captured frame to the capture channel.
+		log.Printf("Captured frame of length %d bytes", captureLength)
+		ok := cw.captureChannel.Push(cw.ctx, captureFrame)
+		if !ok {
+			// Channel is closed, stop the worker.
+			return
+		}
+		// }
 	}
 }

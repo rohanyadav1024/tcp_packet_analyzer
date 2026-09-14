@@ -1,5 +1,7 @@
 package channels
 
+import "context"
+
 // import artifacts "github.com/rohanyadav1024/tcp_packet_analyzer/internal/artifacts"
 
 // This file contains the implementation of the channel data structure used for inter-goroutine communication.
@@ -15,14 +17,25 @@ func NewChannel[T any](bufferSize int) *Channel[T] {
 	return &Channel[T]{ch: make(chan T, bufferSize)}
 }
 
-func (c *Channel[T]) Push(data T) {
+func (c *Channel[T]) Push(ctx context.Context, data T) bool{
 	// Push data into the channel.
-	c.ch <- data
+	select {
+	case c.ch <- data:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
-func (c *Channel[T]) Pop() T {
+func (c *Channel[T]) Pop(ctx context.Context) (T, bool) {
 	// Retrieve data from the channel.
-	return <-c.ch
+	select {
+	case data := <-c.ch:
+		return data, true
+	case <-ctx.Done():
+		var zeroValue T
+		return zeroValue, false
+	}
 }
 
 func (c *Channel[T]) PushNonBlocking(data T) bool {
