@@ -26,6 +26,11 @@ func (p *IPV4Parser) Parse(packet []byte) ([]byte, IPV4Data, error) {
 
 	// Validate IHL (Internet Header Length) to ensure it's within the valid range (5 to 15)
 	headerLength := int(ihl) * 4
+	if headerLength < len(packet) {
+		// Packet is less than the specified header length, return an error
+		return nil, IPV4Data{}, fmt.Errorf("INVALID: packet too short to contain full IPv4 header")
+	}
+
 	if headerLength < minimumIPv4HeaderLength || headerLength > maximumIPv4HeaderLength {
 		return nil, IPV4Data{}, fmt.Errorf("INVALID: IPv4 header length")
 	}
@@ -64,4 +69,30 @@ func extractIPV4Packet(packet []byte, ihl byte) (uint16, uint16, uint16, byte, b
 	destinationIP := fmt.Sprintf("%d.%d.%d.%d", packet[destinationIPOffset], packet[destinationIPOffset+1], packet[destinationIPOffset+2], packet[destinationIPOffset+3])
 	segment := packet[ihl*4:]
 	return totalLength, identification, flagsFragment, ttl, protocol, headerChecksum, sourceIP, destinationIP, segment
+}
+
+func calculateIPV4Checksum(header []byte) uint16 {
+	var sum uint32
+	for i := 0; i < len(header); i += 2 {
+		var word uint16;
+		if i+1 < len(header) {
+			word = uint16(header[i])<<8 | uint16(header[i+1])
+		} else {
+			word = uint16(header[i]) << 8 // If there's an odd number of bytes, pad with zero
+		}
+
+		if i == 10 {
+			continue // Skip the checksum field itself
+		}
+
+		sum += uint32(word)
+	}
+
+	// Add carry bits to the sum
+	for (sum >> 16) > 0 {
+		sum = (sum & 0xFFFF) + (sum >> 16)
+	}
+
+	// One's complement of the sum
+	return ^uint16(sum & 0xFFFF)
 }
