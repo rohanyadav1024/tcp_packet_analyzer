@@ -26,11 +26,6 @@ func (p *IPV4Parser) Parse(packet []byte) ([]byte, IPV4Data, error) {
 
 	// Validate IHL (Internet Header Length) to ensure it's within the valid range (5 to 15)
 	headerLength := int(ihl) * 4
-	if headerLength < len(packet) {
-		// Packet is less than the specified header length, return an error
-		return nil, IPV4Data{}, fmt.Errorf("INVALID: packet too short to contain full IPv4 header")
-	}
-
 	if headerLength < minimumIPv4HeaderLength || headerLength > maximumIPv4HeaderLength {
 		return nil, IPV4Data{}, fmt.Errorf("INVALID: IPv4 header length")
 	}
