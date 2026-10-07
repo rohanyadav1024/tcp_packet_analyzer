@@ -1,230 +1,449 @@
-TCP Packet Analyzer
+# TCP Packet Analyzer
 
-A Go-based TCP packet analyzer for learning packet capture, protocol
-parsing, validation, TCP behavior, IPv4 fragmentation/reassembly, and
-network analysis.
+A Go-based TCP packet analyzer built as a learning and experimentation project for understanding:
 
-Fresh macOS setup
+- Packet capture
+- Network protocol parsing
+- Packet validation
+- TCP behavior
+- IPv4 fragmentation and reassembly
+- Network analysis
+- Concurrent, stage-based packet processing
 
-1. Verify prerequisites
+---
 
+## 🛠️ Fresh macOS Setup
+
+Follow these steps when setting up the project on a fresh macOS installation.
+
+### 1. Verify Prerequisites
+
+Check that Git, Go, and the Xcode Command Line Tools are installed:
+
+```bash
 git --version
 go version
 xcode-select -p
+```
 
-If Xcode Command Line Tools are missing:
+If the Xcode Command Line Tools are missing:
 
+```bash
 xcode-select --install
+```
 
-Use the Go version specified by go.mod.
+> **Note:** Use the Go version specified by `go.mod`.
 
-2. Enter the repository
+---
 
-If already cloned:
+### 2. Enter the Repository
 
+If the repository is already cloned:
+
+```bash
 cd tcp_packet_analyzer
 git status
+```
 
-If not cloned:
+If it has not been cloned yet:
 
+```bash
 git clone <repository-url>
 cd tcp_packet_analyzer
+```
 
-3. Restore dependencies
+---
 
+### 3. Restore Dependencies
+
+Download the project's Go dependencies:
+
+```bash
 go mod download
+```
 
-Do not run go mod tidy unless you intend to reconcile/update go.mod
-and go.sum.
+> **Important:** Do not run `go mod tidy` unless you intentionally want to reconcile or update `go.mod` and `go.sum`.
 
-4. Build
+---
 
+### 4. Build
+
+Verify that the entire project builds successfully:
+
+```bash
 go build ./...
+```
 
-5. Test
+---
 
+### 5. Test
+
+Run the test suite:
+
+```bash
 go test ./...
+```
 
-For concurrency testing:
+For concurrency and data-race detection:
 
+```bash
 go test -race ./...
+```
 
-6. Run
+---
 
-The executable entry point is currently:
+### 6. Run
 
+The current executable entry point is:
+
+```text
 cmd/analyzer/main.go
+```
 
-Run:
+Run the analyzer with:
 
+```bash
 go run ./cmd/analyzer
+```
 
-If packet capture permissions require it:
+If packet-capture permissions require elevated privileges:
 
+```bash
 sudo go run ./cmd/analyzer
+```
 
-Only use sudo when necessary.
+> **Note:** Use `sudo` only when necessary.
 
-Current pipeline
+---
 
-Packet Capture
-      ↓
-CapturedFrame
-      ↓
-DataLink Worker
-      ↓
-Ethernet
-      ↓
-Network Worker
-      ↓
-IPv4
-      ↓
-Transport Worker
-      ↓
-TCP
-      ↓
-PacketStore
-      ↓
-Output Worker
-      ↓
-Formatter
-      ↓
-Terminal
+# 🔄 Current Packet Pipeline
 
-Current protocol scope is:
+The analyzer currently processes packets through the following pipeline:
 
+```text
+                    Packet Capture
+                         │
+                         ▼
+                  ┌──────────────┐
+                  │ CapturedFrame│
+                  └──────┬───────┘
+                         │
+                         ▼
+                  DataLink Worker
+                         │
+                         ▼
+                     Ethernet
+                         │
+                         ▼
+                   Network Worker
+                         │
+                         ▼
+                       IPv4
+                         │
+                         ▼
+                  Transport Worker
+                         │
+                         ▼
+                       TCP
+                         │
+                         ▼
+                    PacketStore
+                         │
+                         ▼
+                   Output Worker
+                         │
+                         ▼
+                     Formatter
+                         │
+                         ▼
+                      Terminal
+```
+
+### Current Protocol Scope
+
+The current protocol path is:
+
+```text
 Ethernet → IPv4 → TCP
+```
 
 Non-IPv4 and non-TCP packets are currently skipped.
 
-Project architecture
+---
 
-Capture reads packets and creates CapturedFrame.
+# 🏗️ Project Architecture
 
-Protocol parsers extract protocol fields.
+The project is organized as a stage-based processing pipeline.
 
-Validators perform structural and semantic validation.
+### Capture
 
-Workers process stages and communicate through typed channels.
+Captures packets from the network interface and creates `CapturedFrame` objects containing the captured packet data and associated metadata.
 
-PacketStore retains structured packet data.
+### Protocol Parsers
 
-Output presents packet data to the user.
+Protocol parsers extract fields from the corresponding protocol headers.
 
-Analysis will later provide higher-level TCP/network behavior
-analysis.
+Current protocol layers include:
 
-Parsers, validators, workers, capture, and the store should not own
-user-facing packet presentation. The output package owns that
-responsibility.
+- Ethernet
+- IPv4
+- TCP
 
-PacketStore and output
+### Validators
 
-Packets are retained in PacketStore after being printed.
+Validators perform structural and semantic validation of protocol data.
 
-The store is the source of structured packet data; output is only a
-presentation of that data.
+Validation is kept separate from parsing so that:
+
+```text
+Parsing    → Extract information
+Validation → Determine whether information is structurally/semantically valid
+```
+
+### Workers
+
+Workers process individual pipeline stages and communicate with other stages through typed channels.
+
+The workers are responsible for execution, while protocol packages remain responsible for protocol-specific logic.
+
+### PacketStore
+
+`PacketStore` retains structured packet information after processing.
+
+It acts as the source of truth for packet data.
+
+### Output
+
+The output subsystem is responsible for presenting packet information to the user.
+
+Parsers, validators, workers, capture, and the store should **not** own user-facing packet presentation.
+
+The `output` package owns that responsibility.
+
+### Analysis
+
+The analysis layer will provide higher-level TCP and network behavior analysis once the underlying packet-processing pipeline is complete.
+
+---
+
+# 💾 PacketStore and Output
+
+Packets remain available in `PacketStore` after they have been printed.
 
 The intended relationship is:
 
-PacketStore
-   ├──→ Output
-   ├──→ Analysis
-   └──→ Export
+```text
+                    PacketStore
+                   /     |      \
+                  ▼      ▼       ▼
+              Output  Analysis  Export
+```
 
-Next major feature
+The important architectural distinction is:
 
-The next major feature is IPv4 fragmentation and reassembly.
+```text
+PacketStore → Source of structured packet data
+Output      → Presentation of that data
+```
 
-The future flow is:
+This allows the same stored packet information to later be consumed by:
 
+- Terminal output
+- Network/TCP analysis
+- Export functionality
+- Other future consumers
+
+without coupling those consumers to the packet-processing pipeline.
+
+---
+
+# 🧩 Next Major Feature: IPv4 Fragmentation & Reassembly
+
+The next major feature is **IPv4 fragmentation and reassembly**.
+
+The future packet flow will be:
+
+```text
 CapturedFrame
-      ↓
-Ethernet
-      ↓
-IPv4
-      ↓
-Fragment detection
-      ↓
-Reassembly
-      ↓
-Complete IPv4 payload
-      ↓
-TCP
-      ↓
-PacketStore
-      ↓
-Output / Analysis
+      │
+      ▼
+   Ethernet
+      │
+      ▼
+     IPv4
+      │
+      ▼
+Fragment Detection
+      │
+      ▼
+  Reassembly
+      │
+      ▼
+Complete IPv4 Payload
+      │
+      ▼
+     TCP
+      │
+      ▼
+ PacketStore
+      │
+      ├──────────► Output
+      │
+      └──────────► Analysis
+```
 
-Important: an IPv4 packet with Protocol = 6 does not mean every
-fragment contains a TCP header. TCP parsing must occur after successful
-reassembly for fragmented datagrams.
+### Important IPv4 Fragmentation Rule
 
-Useful commands
+An IPv4 packet with:
 
-Format code:
+```text
+Protocol = 6
+```
 
+does **not** necessarily mean that the current fragment contains a TCP header.
+
+Only the first fragment contains the beginning of the IPv4 payload, where the TCP header begins.
+
+Therefore, for fragmented IPv4 datagrams:
+
+```text
+IPv4 Fragments
+      │
+      ▼
+  Reassembly
+      │
+      ▼
+Complete IPv4 Payload
+      │
+      ▼
+   TCP Parser
+```
+
+TCP parsing must occur **after successful reassembly** for fragmented datagrams.
+
+---
+
+# 🧪 Useful Commands
+
+### Format Code
+
+```bash
 gofmt -w .
+```
 
-Build:
+### Build
 
+```bash
 go build ./...
+```
 
-Test:
+### Run Tests
 
+```bash
 go test ./...
+```
 
-Run:
+### Run Race Detector
 
+```bash
+go test -race ./...
+```
+
+### Run Analyzer
+
+```bash
 go run ./cmd/analyzer
+```
 
-Inspect changes:
+### Inspect Changes
 
+```bash
 git diff
+```
 
-Future restart checklist
+### Check Repository Status
 
-After a fresh Mac setup:
+```bash
+git status
+```
 
+---
+
+# 🔁 Fresh-Machine Restart Checklist
+
+After setting up a fresh Mac or restoring the repository:
+
+```bash
 cd tcp_packet_analyzer
+
 git pull
+
 go version
+
 go mod download
+
 go build ./...
+
 go test ./...
+
 go run ./cmd/analyzer
+```
 
-If capture permissions require elevation:
+If packet-capture permissions require elevation:
 
+```bash
 sudo go run ./cmd/analyzer
+```
 
-Git workflow
+---
 
-Before work:
+# 🌿 Git Workflow
 
+### Before Starting Work
+
+```bash
 git pull
 git status
+```
 
-After implementation:
+### After Implementation
 
+Run the verification steps:
+
+```bash
 go test ./...
 go build ./...
 git diff
+```
 
 Then commit and push:
 
+```bash
 git add .
 git commit -m "Implement <feature>"
 git push
+```
 
-Preferred project workflow:
+---
 
-GitHub Issue
-     ↓
-Implementation
-     ↓
-Testing
-     ↓
-Commit / Pull Request
-     ↓
-Merge
+# 🔄 Preferred Development Workflow
+
+The project follows a feature-driven workflow:
+
+```text
+        GitHub Issue
+             │
+             ▼
+       Implementation
+             │
+             ▼
+          Testing
+             │
+             ▼
+      Commit / Pull Request
+             │
+             ▼
+           Merge
+```
+
+This keeps implementation, testing, and version control changes organized around individual project features.
