@@ -12,7 +12,7 @@ type ReassemblyWorker struct {
 	wg     sync.WaitGroup     // WaitGroup to manage the worker's goroutines
 
 	pool *MessageQueue // Channel for receiving messages to process
-	assemblyMap map[AssemblyLineKey]*Assembly_Line // Map to hold the assembly lines for reassembly
+	assemblyMap map[AssemblyLineKey]*AssemblyLine // Map to hold the assembly lines for reassembly
 }
 
 func NewReassemblyWorker(

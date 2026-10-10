@@ -6,15 +6,15 @@ import (
 
 type MessageQueue struct {
 	// Add fields for managing the message queue
-	queue   chan Message    // Channel to hold messages for processing
-	size    int             // Size of the message queue
+	queue chan Message // Channel to hold messages for processing
+	size  int          // Size of the message queue
 }
 
 // NewMessageQueue creates a new instance of MessageQueue with the specified buffer size.
 func NewMessageQueue(bufferSize int) *MessageQueue {
 	return &MessageQueue{
-		queue:   make(chan Message, bufferSize),
-		size:    bufferSize,
+		queue: make(chan Message, bufferSize),
+		size:  bufferSize,
 	}
 }
 
@@ -25,8 +25,8 @@ func (mq *MessageQueue) Enqueue(ctx context.Context, msg Message) {
 		// Handle context cancellation or timeout
 		return
 	default:
+		mq.queue <- msg
 	}
-	mq.queue <- msg
 }
 
 func (mq *MessageQueue) Dequeue(ctx context.Context) Message {
@@ -35,6 +35,6 @@ func (mq *MessageQueue) Dequeue(ctx context.Context) Message {
 		// Handle context cancellation or timeout
 		return Message{}
 	default:
+		return <-mq.queue
 	}
-	return <-mq.queue
 }

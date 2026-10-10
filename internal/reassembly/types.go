@@ -7,7 +7,7 @@ type SystemCallType uint8
 type MessageType uint8
 
 type Message struct {
-	Type    MessageType
+	Type MessageType
 	Body interface{}
 }
 
@@ -17,7 +17,7 @@ type Packet struct {
 }
 
 type Event struct {
-	Type EventType
+	Type            EventType
 	AssemblyLineKey AssemblyLineKey
 }
 
@@ -68,15 +68,10 @@ const (
 	StateDiscarded                                  // 4: Discarded
 )
 
-
-
 type AssemblyPacketRequest struct {
 	AssemblyLineKey AssemblyLineKey
 	FragmentOffset  uint16
 	MoreFragments   bool
+	DontFragment    bool
 	Payload         []byte
-}
-
-type CompletionResult struct {
-	IsComplete bool   // Indicates if the assembly line has received all expected fragments
 }
