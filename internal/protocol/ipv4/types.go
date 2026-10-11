@@ -13,7 +13,7 @@ const (
 	sourceIPOffset       = 12
 	destinationIPOffset  = 16
 
-		// Constraints
+	// Constraints
 	minimumIPv4HeaderLength = 20
 	maximumIPv4HeaderLength = 60
 )
@@ -24,10 +24,19 @@ type IPV4Data struct {
 	TOS            uint8
 	TotalLength    uint16 // in bytes, includes header and data
 	Identification uint16
-	FlagsFragment  uint16
+	FragmentInfo   IPv4FragmentInfo
 	TTL            uint8
 	Protocol       uint8
 	HeaderChecksum uint16
-	SourceIP       string
-	DestinationIP  string
+	SourceIP       [4]byte
+	DestinationIP  [4]byte
+	// SourceIP       string
+	// DestinationIP  string
+}
+
+type IPv4FragmentInfo struct {
+	ReservedFlag   bool
+	DontFragment   bool
+	MoreFragments  bool
+	FragmentOffset uint16
 }

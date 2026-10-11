@@ -68,7 +68,7 @@ func (dlw *DataLinkWorker) worker() {
 		}
 
 		id := captureFrame.ID
-		_ = dlw.packetStore.GetOrCreate(id)
+		_ = dlw.packetStore.GetOrCreatePacket(id)
 
 		dlw.packetStore.AddCaptureMetadata(
 			id,

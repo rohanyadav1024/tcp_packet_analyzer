@@ -142,6 +142,9 @@ func (w *ReassemblyWorker) handlePacket(req AssemblyPacketRequest) {
 		return
 	}
 
+	// Add associated packet store's packet Id for resemblence later
+	al.packetIds = append(al.packetIds, fragment.packetId)
+
 	// Fragment can be last in line -> Probability of completion
 	// Waiting for missing fragment -> Probability of completion
 	if fragment.IsLast() || al.state == StateWaitingForMissing {

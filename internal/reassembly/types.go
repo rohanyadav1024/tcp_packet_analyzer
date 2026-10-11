@@ -69,6 +69,7 @@ const (
 )
 
 type AssemblyPacketRequest struct {
+	PacketId        uint64
 	AssemblyLineKey AssemblyLineKey
 	StartOffset     uint16
 	EndOffset       uint16

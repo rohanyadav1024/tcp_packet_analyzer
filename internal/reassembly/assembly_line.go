@@ -19,6 +19,7 @@ type AssemblyLine struct {
 	receivedFragmentsCount uint16 // Count of received fragments for this assembly line
 	receivedUniqueBytes    uint16 // Count of unique bytes received for this assembly line
 
+	packetIds []uint64   //Keep track of associated packets in packet store
 	fragments []fragment // Sorted Slice to hold the received exact fragments for this assembly line
 
 	coverage []ByteRange // Slice to hold the coverage of received fragments for this assembly line

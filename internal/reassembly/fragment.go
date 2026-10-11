@@ -3,6 +3,8 @@ package reassembly
 const maxIPv4PayloadSize = 65515
 
 type fragment struct {
+	packetId uint64 //packet Id of associated packet in packet store
+
 	startOffset uint16 // Offset of the fragment in the original packet
 	endOffset   uint16 // End offset of the fragment in the original packet
 	payload     []byte // Actual data of the fragment
