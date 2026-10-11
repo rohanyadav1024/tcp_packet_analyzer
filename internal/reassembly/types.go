@@ -8,7 +8,7 @@ type MessageType uint8
 
 type Message struct {
 	Type MessageType
-	Body interface{}
+	Body any
 }
 
 type Packet struct {
@@ -62,15 +62,16 @@ type AssemblyLineState uint8
 
 const (
 	StateCollecting        AssemblyLineState = iota // 0: Not started
-	StateCheckPending                               // 1: check pending
-	StateWaitingForMissing                          // 2: waiting for missing
-	StateCompleted                                  // 3: Completed
-	StateDiscarded                                  // 4: Discarded
+	StateWaitingForMissing                          // 1: waiting for missing
+	StateCompleted                                  // 2: Completed
+	StateDiscarded                                  // 3: Discarded
+	// No need to mention CheckPending state as it is already done by event
 )
 
 type AssemblyPacketRequest struct {
 	AssemblyLineKey AssemblyLineKey
-	FragmentOffset  uint16
+	StartOffset     uint16
+	EndOffset       uint16
 	MoreFragments   bool
 	DontFragment    bool
 	Payload         []byte

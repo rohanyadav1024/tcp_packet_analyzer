@@ -39,11 +39,14 @@ func NewReassemblyManager(packetOutput PushToChannelCallback, packetDiscard Push
 
 	for i := range manager.workerPoolSize {
 		manager.messageQueuePool[i] = NewMessageQueue(manager.messageQueueSize)
-		manager.workerPool[i] = NewReassemblyWorker(manager.messageQueuePool[i])
+		manager.workerPool[i] = NewReassemblyWorker(
+			manager.messageQueuePool[i],
+			packetOutput,
+			packetDiscard)
 	}
 
 	manager.rsmblychannel = channels.NewChannel[AssemblyPacketRequest](manager.reassemblyChannelSize)
-	manager.dispatcher = NewDispatcher(manager.messageQueuePool, manager.rsmblychannel) // Pass the message queue pool to the dispatcher
+	manager.dispatcher, _ = NewDispatcher(manager.messageQueuePool, manager.rsmblychannel) // Pass the message queue pool to the dispatcher
 
 	return manager
 }

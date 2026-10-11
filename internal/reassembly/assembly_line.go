@@ -37,6 +37,7 @@ func NewAssemblyLine(key AssemblyLineKey) *AssemblyLine {
 	}
 }
 
+// Output -> Ingested | Duplicate Not ingested | Conflict Not ingested
 func (al *AssemblyLine) Ingest(fragment fragment, moreFrags bool) bool {
 
 	fragments := al.fragments
@@ -45,8 +46,7 @@ func (al *AssemblyLine) Ingest(fragment fragment, moreFrags bool) bool {
 	index := indexOfFragment(fragments, s, e)
 
 	if !hasOverlap(fragments, s, e) {
-		al.insertFragment(fragment, index, moreFrags)
-		return true
+		return al.insertFragment(fragment, index, moreFrags)
 	}
 
 	if hasConflict(fragments, s, e, fragment.payload) {
@@ -61,8 +61,7 @@ func (al *AssemblyLine) Ingest(fragment fragment, moreFrags bool) bool {
 	}
 
 	// New bytes with overlap: Insertion
-	al.insertFragment(fragment, index, moreFrags)
-	return true
+	return al.insertFragment(fragment, index, moreFrags)
 }
 
 func (al *AssemblyLine) Flatten() ([]byte, bool) {
@@ -121,6 +120,7 @@ func (al *AssemblyLine) IsComplete() bool {
 	}
 
 	if !al.finalFragmentReceived {
+		// Still collecting, Keep state as it is
 		return false
 	}
 
@@ -133,7 +133,11 @@ func (al *AssemblyLine) IsComplete() bool {
 	isComplete := al.receivedUniqueBytes == span && len(al.gaps) == 0
 	if isComplete {
 		al.state = StateCompleted
+	} else {
+		// Final Fragment recieved -> Could be Waiting for Missing
+		al.state = StateWaitingForMissing
 	}
+
 	return isComplete
 }
 
@@ -208,6 +212,12 @@ func (al *AssemblyLine) insertFragment(ifrag fragment, index int, moreFrags bool
 
 	// A fragment with MF = 0 establishes the payload's end.
 	if !moreFrags {
+		// Check if already a final fragment arrived and current one conflicting
+		if al.finalFragmentReceived && al.expectedPayloadLength != ifrag.endOffset {
+			// Discard the Line
+			al.state = StateDiscarded
+			return false
+		}
 		al.expectedPayloadLength = ifrag.endOffset
 		al.finalFragmentReceived = true
 	}
