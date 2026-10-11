@@ -5,7 +5,6 @@ import "fmt"
 type IPV4Parser struct {
 }
 
-
 // Return structure:
 // byte(remaining bytes after parsing),
 // IPV4 Data structure,
@@ -26,7 +25,7 @@ func (p *IPV4Parser) Parse(packet []byte) ([]byte, IPV4Data, error) {
 
 	// Validate IHL (Internet Header Length) to ensure it's within the valid range (5 to 15)
 	headerLength := int(ihl) * 4
-	if headerLength < len(packet) {
+	if headerLength > len(packet) {
 		// Packet is less than the specified header length, return an error
 		return nil, IPV4Data{}, fmt.Errorf("INVALID: packet too short to contain full IPv4 header")
 	}
@@ -74,7 +73,7 @@ func extractIPV4Packet(packet []byte, ihl byte) (uint16, uint16, uint16, byte, b
 func calculateIPV4Checksum(header []byte) uint16 {
 	var sum uint32
 	for i := 0; i < len(header); i += 2 {
-		var word uint16;
+		var word uint16
 		if i+1 < len(header) {
 			word = uint16(header[i])<<8 | uint16(header[i+1])
 		} else {
