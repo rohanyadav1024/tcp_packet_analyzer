@@ -11,20 +11,25 @@ import (
 	tcp "github.com/rohanyadav1024/tcp_packet_analyzer/internal/protocol/tcp"
 )
 
-// PacketData represents the data structure for storing packet information in the database.
+// PacketStore stores captured packets and reassembled datagrams separately.
 type PacketStore struct {
-	packets map[uint64]*PacketData // Map to store packet data with unique IDs.
-	mu      sync.RWMutex           // Mutex to ensure thread-safe access to the packets map.
+	packets   map[uint64]*PacketData
+	datagrams map[uint64]*ReassembledDatagram
+
+	mu sync.RWMutex
 }
 
 func NewPacketStore() *PacketStore {
 	return &PacketStore{
-		packets: make(map[uint64]*PacketData),
+		packets:   make(map[uint64]*PacketData),
+		datagrams: make(map[uint64]*ReassembledDatagram),
 	}
 }
 
-// Internal helper
-func (ps *PacketStore) getOrCreateLocked(id uint64) *PacketData {
+// ---- Captured packet methods ----
+
+// getOrCreatePacketLocked must only be called while holding the write lock.
+func (ps *PacketStore) getOrCreatePacketLocked(id uint64) *PacketData {
 	packet, exists := ps.packets[id]
 	if !exists {
 		packet = &PacketData{ID: id}
@@ -34,47 +39,47 @@ func (ps *PacketStore) getOrCreateLocked(id uint64) *PacketData {
 	return packet
 }
 
-// GetOrCreate retrieves a packet from the store by its ID.
-// If the packet does not exist, it creates a new one and adds it to the store.
-func (ps *PacketStore) GetOrCreate(id uint64) *PacketData {
+func (ps *PacketStore) GetOrCreatePacket(id uint64) *PacketData {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
-	return ps.getOrCreateLocked(id)
+	return ps.getOrCreatePacketLocked(id)
 }
 
-func (ps *PacketStore) Get(id uint64) (*PacketData, bool) {
+func (ps *PacketStore) GetPacket(id uint64) (*PacketData, bool) {
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
+
 	packet, exists := ps.packets[id]
 	return packet, exists
 }
 
-func (ps *PacketStore) Delete(id uint64) {
+func (ps *PacketStore) DeletePacket(id uint64) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
+
 	delete(ps.packets, id)
 }
 
 func (ps *PacketStore) AddEthernetData(id uint64, data *eth.EthernetData) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	packet := ps.getOrCreateLocked(id)
-	packet.Ethernet = data
+
+	ps.getOrCreatePacketLocked(id).Ethernet = data
 }
 
 func (ps *PacketStore) AddIPV4Data(id uint64, data *ipv4.IPV4Data) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	packet := ps.getOrCreateLocked(id)
-	packet.IPv4 = data
+
+	ps.getOrCreatePacketLocked(id).IPv4 = data
 }
 
 func (ps *PacketStore) AddTCPData(id uint64, data *tcp.TCPData) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	packet := ps.getOrCreateLocked(id)
-	packet.TCP = data
+
+	ps.getOrCreatePacketLocked(id).TCP = data
 }
 
 func (ps *PacketStore) AddCaptureMetadata(
@@ -86,14 +91,92 @@ func (ps *PacketStore) AddCaptureMetadata(
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
-	packet := ps.getOrCreateLocked(id)
-
+	packet := ps.getOrCreatePacketLocked(id)
 	packet.Timestamp = timestamp
 	packet.CapturedLength = capturedLength
 	packet.OriginalLength = originalLength
 }
 
-// Temparory method
+func (ps *PacketStore) AddPacketWarning(id uint64, warning string) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	packet := ps.getOrCreatePacketLocked(id)
+	packet.Warnings = append(packet.Warnings, warning)
+}
+
+// ---- Reassembled datagram methods ----
+
+// getOrCreateDatagramLocked must only be called while holding the write lock.
+func (ps *PacketStore) getOrCreateDatagramLocked(
+	id uint64,
+) *ReassembledDatagram {
+	datagram, exists := ps.datagrams[id]
+	if !exists {
+		datagram = &ReassembledDatagram{ID: id}
+		ps.datagrams[id] = datagram
+	}
+
+	return datagram
+}
+
+// AddDatagram stores a newly constructed reassembled datagram.
+// The slices are copied so the caller can safely reuse its input buffers.
+func (ps *PacketStore) AddDatagram(data *ReassembledDatagram) {
+	if data == nil {
+		return
+	}
+
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	datagram := *data
+	datagram.FragmentPacketIDs = append(
+		[]uint64(nil), data.FragmentPacketIDs...,
+	)
+	datagram.Payload = append([]byte(nil), data.Payload...)
+
+	ps.datagrams[data.ID] = &datagram
+}
+
+func (ps *PacketStore) GetOrCreateDatagram(
+	id uint64,
+) *ReassembledDatagram {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	return ps.getOrCreateDatagramLocked(id)
+}
+
+func (ps *PacketStore) GetDatagram(
+	id uint64,
+) (*ReassembledDatagram, bool) {
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
+
+	datagram, exists := ps.datagrams[id]
+	return datagram, exists
+}
+
+func (ps *PacketStore) DeleteDatagram(id uint64) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	delete(ps.datagrams, id)
+}
+
+func (ps *PacketStore) AddDatagramTCPData(
+	id uint64,
+	data *tcp.TCPData,
+) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	ps.getOrCreateDatagramLocked(id).TCP = data
+}
+
+// ---- Temporary debugging method ----
+
 func (ps *PacketStore) DumpToFile(filename string) error {
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
@@ -105,29 +188,27 @@ func (ps *PacketStore) DumpToFile(filename string) error {
 	defer file.Close()
 
 	for id, packet := range ps.packets {
-		fmt.Fprintf(file, "========================================\n")
+		fmt.Fprintln(file, "========================================")
 		fmt.Fprintf(file, "Packet ID: %d\n", id)
-		fmt.Fprintf(file, "========================================\n\n")
-
-		fmt.Fprintf(file, "Packet Data:\n")
-		fmt.Fprintf(file, "%+v\n\n", *packet)
+		fmt.Fprintln(file, "========================================")
+		fmt.Fprintf(file, "Packet Data:\n%+v\n\n", *packet)
 
 		if packet.Ethernet != nil {
-			fmt.Fprintf(file, "Ethernet:\n")
-			fmt.Fprintf(file, "%+v\n\n", *packet.Ethernet)
+			fmt.Fprintf(file, "Ethernet:\n%+v\n\n", *packet.Ethernet)
 		}
-
 		if packet.IPv4 != nil {
-			fmt.Fprintf(file, "IPv4:\n")
-			fmt.Fprintf(file, "%+v\n\n", *packet.IPv4)
+			fmt.Fprintf(file, "IPv4:\n%+v\n\n", *packet.IPv4)
 		}
-
 		if packet.TCP != nil {
-			fmt.Fprintf(file, "TCP:\n")
-			fmt.Fprintf(file, "%+v\n\n", *packet.TCP)
+			fmt.Fprintf(file, "TCP:\n%+v\n\n", *packet.TCP)
 		}
+	}
 
-		fmt.Fprintf(file, "\n")
+	for id, datagram := range ps.datagrams {
+		fmt.Fprintln(file, "========================================")
+		fmt.Fprintf(file, "Reassembled Datagram ID: %d\n", id)
+		fmt.Fprintln(file, "========================================")
+		fmt.Fprintf(file, "Datagram Data:\n%+v\n\n", *datagram)
 	}
 
 	return nil

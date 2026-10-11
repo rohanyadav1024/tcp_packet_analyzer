@@ -60,7 +60,7 @@ func (ow *OutputWorker) worker() {
 		}
 
 		id := msgPacket.ID
-		packetData, ok := ow.packetStore.Get(id)
+		packetData, ok := ow.packetStore.GetPacket(id)
 		if !ok {
 			// Data is absent
 			continue

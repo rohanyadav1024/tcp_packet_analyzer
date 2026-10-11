@@ -13,6 +13,7 @@ import (
 	eth "github.com/rohanyadav1024/tcp_packet_analyzer/internal/protocol/ethernet"
 	ipv4 "github.com/rohanyadav1024/tcp_packet_analyzer/internal/protocol/ipv4"
 	tcp "github.com/rohanyadav1024/tcp_packet_analyzer/internal/protocol/tcp"
+	"github.com/rohanyadav1024/tcp_packet_analyzer/internal/reassembly"
 	store "github.com/rohanyadav1024/tcp_packet_analyzer/internal/store"
 	"github.com/rohanyadav1024/tcp_packet_analyzer/internal/workers"
 )
@@ -32,6 +33,16 @@ import (
 // 		A channel for transferring transport layer packets between the network workers and transport workers.
 // 		Network workers → Transport workers
 // 		Accepts: TransportPacket
+//
+// OutputChannel
+// 		A channel for transferring transport layer packets between the transport workers and output workers.
+// 		Transport workers → Output workers
+// 		Accepts: Message
+//
+// DiscardedPacketChannel
+// 		A channel for transferring discarded transport layer packets.
+// 		Transport workers → Discarded packets
+// 		Accepts: TransportPacket
 
 type Engine struct {
 	ctx    context.Context
@@ -39,10 +50,11 @@ type Engine struct {
 	wg     sync.WaitGroup
 
 	channels struct {
-		DataLinkChannel  *channels.Channel[artifacts.CapturedFrame]   // Channel for transferring capture frames to Data link workers.
-		NetworkChannel   *channels.Channel[artifacts.NetworkPacket]   // Channel for transferring network layer packets between the Data link workers and network workers.
-		TransportChannel *channels.Channel[artifacts.TransportPacket] // Channel for transferring transport layer packets between the network workers and transport workers.
-		OutputChannel    *channels.Channel[artifacts.Message]
+		DataLinkChannel        *channels.Channel[artifacts.CapturedFrame]   // Channel for transferring capture frames to Data link workers.
+		NetworkChannel         *channels.Channel[artifacts.NetworkPacket]   // Channel for transferring network layer packets between the Data link workers and network workers.
+		TransportChannel       *channels.Channel[artifacts.TransportPacket] // Channel for transferring transport layer packets between the network workers and transport workers.
+		OutputChannel          *channels.Channel[artifacts.Message]
+		DiscardedPacketChannel *channels.Channel[artifacts.TransportPacket] // Channel for transferring discarded transport layer packets.
 	}
 
 	parsers struct {
@@ -71,6 +83,7 @@ func NewEngine() *Engine {
 	networkChannel := channels.NewChannel[artifacts.NetworkPacket](100)
 	transportChannel := channels.NewChannel[artifacts.TransportPacket](100)
 	outputChannel := channels.NewChannel[artifacts.Message](100)
+	discardedPacketChannel := channels.NewChannel[artifacts.TransportPacket](100)
 
 	// Initialize the parsers.
 	ethernetParser := &eth.EthernetParser{}
@@ -98,15 +111,17 @@ func NewEngine() *Engine {
 		cancel: cancel,
 
 		channels: struct {
-			DataLinkChannel  *channels.Channel[artifacts.CapturedFrame]
-			NetworkChannel   *channels.Channel[artifacts.NetworkPacket]
-			TransportChannel *channels.Channel[artifacts.TransportPacket]
-			OutputChannel    *channels.Channel[artifacts.Message]
+			DataLinkChannel        *channels.Channel[artifacts.CapturedFrame]
+			NetworkChannel         *channels.Channel[artifacts.NetworkPacket]
+			TransportChannel       *channels.Channel[artifacts.TransportPacket]
+			OutputChannel          *channels.Channel[artifacts.Message]
+			DiscardedPacketChannel *channels.Channel[artifacts.TransportPacket]
 		}{
-			DataLinkChannel:  dataLinkChannel,
-			NetworkChannel:   networkChannel,
-			TransportChannel: transportChannel,
-			OutputChannel:    outputChannel,
+			DataLinkChannel:        dataLinkChannel,
+			NetworkChannel:         networkChannel,
+			TransportChannel:       transportChannel,
+			OutputChannel:          outputChannel,
+			DiscardedPacketChannel: discardedPacketChannel,
 		},
 		parsers: struct {
 			EthernetParser *eth.EthernetParser
@@ -140,8 +155,48 @@ func (e *Engine) Start() {
 	e.workers.CaptureWorker.Run()
 	e.workers.DataLinkWorker.Run()
 	e.workers.NetworkWorker.Run()
+
+	// Initialize the reassembly manager and start the reassembly process.
+	// It should be done before starting the transport and output workers
+	// to ensure that the reassembly process is ready to handle packets.
+	e.initializeReassembly()
+
 	e.workers.TransportWorker.Run()
 	e.workers.OutputWorker.Run()
+
+}
+
+func (e *Engine) initializeReassembly() {
+
+	pushToTransportChannel := reassembly.PushToChannelCallback(
+		func(ctx context.Context, packet []byte) error {
+			transportPacket := artifacts.TransportPacket{
+				PacketData: packet,
+			}
+
+			if ok := e.channels.TransportChannel.Push(ctx, transportPacket); !ok {
+				return ctx.Err()
+			}
+
+			return nil
+		},
+	)
+
+	pushToDiscardChannel := reassembly.PushToChannelCallback(
+		func(ctx context.Context, packet []byte) error {
+			discardPacket := artifacts.TransportPacket{
+				PacketData: packet,
+			}
+
+			if ok := e.channels.DiscardedPacketChannel.Push(ctx, discardPacket); !ok {
+				return ctx.Err()
+			}
+
+			return nil
+		},
+	)
+
+	reassembly.CreateReassembly(pushToTransportChannel, pushToDiscardChannel)
 }
 
 func (e *Engine) Stop() {
@@ -157,6 +212,9 @@ func (e *Engine) Stop() {
 	e.channels.NetworkChannel.Close()
 	e.channels.TransportChannel.Close()
 	e.channels.OutputChannel.Close()
+	e.channels.DiscardedPacketChannel.Close()
+
+	reassembly.DisposeReassembly()
 
 	e.cancel()
 }

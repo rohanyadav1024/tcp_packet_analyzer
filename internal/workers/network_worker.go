@@ -8,6 +8,7 @@ import (
 	artifacts "github.com/rohanyadav1024/tcp_packet_analyzer/internal/artifacts"
 	channels "github.com/rohanyadav1024/tcp_packet_analyzer/internal/channels"
 	ipv4 "github.com/rohanyadav1024/tcp_packet_analyzer/internal/protocol/ipv4"
+	"github.com/rohanyadav1024/tcp_packet_analyzer/internal/reassembly"
 	store "github.com/rohanyadav1024/tcp_packet_analyzer/internal/store"
 )
 
@@ -18,6 +19,8 @@ type NetworkWorker struct {
 
 	ntwch *channels.Channel[artifacts.NetworkPacket]   // Channel for pulling network layer packets.
 	tpch  *channels.Channel[artifacts.TransportPacket] // Channel for transferring transport layer packets to the transport workers.
+
+	rsmbly *reassembly.Reassembly
 
 	ipv4Parser  *ipv4.IPV4Parser // IPv4 parser for parsing the network layer packets.
 	packetStore *store.PacketStore
@@ -34,6 +37,7 @@ func NewNetworkWorker(
 		ctx:         ctx,
 		cancel:      cancel,
 		packetStore: pktstr,
+		rsmbly:      reassembly.GetReassemblyInstance(),
 	}
 }
 
@@ -81,6 +85,38 @@ func (nw *NetworkWorker) worker() {
 		// push to store
 		id := networkPacket.ID
 		nw.packetStore.AddIPV4Data(id, &td)
+
+		// If IPV4 packet is fragmented, move to reassembly
+		if td.FragmentInfo.MoreFragments || td.FragmentInfo.FragmentOffset != 0 {
+			// Assembly key will be used to detect the same packet from output channel
+			assemblyKey := reassembly.AssemblyLineKey{
+				SourceIP:       td.SourceIP,
+				DestinationIP:  td.DestinationIP,
+				Protocol:       td.Protocol,
+				Identification: td.Identification,
+			}
+
+			// Len(transportPacket) -> actual bytes between StartOffset and EndOffset of fragment
+			startOffset := td.FragmentInfo.FragmentOffset * 8
+			endOffset := startOffset + uint16(len(transportPacket))
+
+			// Route the packet to reassembly
+			err := nw.rsmbly.PushToReassembly(nw.ctx, reassembly.AssemblyPacketRequest{
+				PacketId:        id,
+				AssemblyLineKey: assemblyKey,
+				StartOffset:     startOffset,
+				EndOffset:       endOffset,
+				MoreFragments:   td.FragmentInfo.MoreFragments,
+				DontFragment:    td.FragmentInfo.DontFragment,
+				Payload:         transportPacket,
+			})
+			if err != nil {
+				// Handle the error according to your reassembly error-handling policy.
+			}
+
+			continue
+		}
+
 		ok = nw.tpch.Push(nw.ctx, artifacts.TransportPacket{
 			ID:         id,
 			PacketData: transportPacket,
